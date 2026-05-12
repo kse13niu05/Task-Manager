@@ -1,134 +1,109 @@
 """
-Контроллер и менеджер паролей
+Контроллер приложения Random Task Generator
 """
 
-from models import PasswordRecord, PasswordCategory
-from utils import PasswordGenerator, UndoStack
+from models import TaskType, Difficulty
+from factories import TaskGenerator
+from utils import TaskHistoryQueue, JSONHandler
 
-class PasswordManager:
-    """Менеджер паролей - основная бизнес-логика"""
+class TaskManagerController:
+    """Контроллер для управления задачами"""
     
     def __init__(self):
-        self.__records = {}
-        self.__undo_stack = UndoStack()
+        self.generator = TaskGenerator()
+        self.history = TaskHistoryQueue()
+        self.json_handler = JSONHandler()
     
-    def add_record(self, service, username, password, category="other", notes=""):
-        """Добавить новую запись пароля"""
-        record = PasswordRecord(service, username, password, category, notes)
-        self.__records[record.get_id()] = record
-        self.__undo_stack.push(("add", record.get_id(), None))
-        return record
+    def generate_random_task(self, task_type=None, difficulty=None):
+        """Сгенерировать случайную задачу"""
+        try:
+            task = self.generator.generate_random_task(task_type, difficulty)
+            self.history.add(task)
+            return task
+        except Exception as e:
+            raise Exception(f"Ошибка генерации задачи: {e}")
     
-    def delete_record(self, record_id):
-        """Удалить запись по ID"""
-        if record_id in self.__records:
-            deleted = self.__records[record_id]
-            del self.__records[record_id]
-            self.__undo_stack.push(("delete", record_id, deleted.to_dict()))
-            return True
-        return False
+    def add_custom_task(self, task_type, description, difficulty):
+        """Добавить пользовательскую задачу"""
+        try:
+            task = self.generator.generate_task_by_template(task_type, description, difficulty)
+            self.history.add(task)
+            return task
+        except Exception as e:
+            raise Exception(f"Ошибка добавления задачи: {e}")
     
-    def update_record(self, record_id, **kwargs):
-        """Обновить запись"""
-        if record_id in self.__records:
-            record = self.__records[record_id]
-            old_state = record.to_dict()
-            
-            if "service" in kwargs:
-                record.set_service(kwargs["service"])
-            if "username" in kwargs:
-                record.set_username(kwargs["username"])
-            if "password" in kwargs:
-                record.set_password(kwargs["password"])
-            if "category" in kwargs:
-                record.set_category(kwargs["category"])
-            if "notes" in kwargs:
-                record.set_notes(kwargs["notes"])
-            
-            self.__undo_stack.push(("update", record_id, old_state))
-            return True
-        return False
+    def get_all_tasks(self):
+        """Получить все задачи из истории"""
+        return self.history.get_all()
     
-    def undo(self):
-        """Отменить последнее действие"""
-        action = self.__undo_stack.pop()
-        if not action:
-            return "Нечего отменять"
-        
-        action_type, record_id, old_data = action
-        
-        if action_type == "add":
-            if record_id in self.__records:
-                del self.__records[record_id]
-                return f"Отменено: удалена запись {record_id}"
-        
-        elif action_type == "delete":
-            if old_data:
-                restored = PasswordRecord.from_dict(old_data)
-                self.__records[record_id] = restored
-                return f"Отменено: восстановлена запись {record_id}"
-        
-        elif action_type == "update":
-            if record_id in self.__records:
-                record = self.__records[record_id]
-                record.set_service(old_data["service"])
-                record.set_username(old_data["username"])
-                record.set_password(old_data["password"])
-                record.set_category(old_data["category"])
-                record.set_notes(old_data["notes"])
-                return f"Отменено: восстановлена запись {record_id}"
-        
-        return "Отмена выполнена"
+    def filter_by_type(self, task_type):
+        """Фильтрация задач по типу"""
+        if isinstance(task_type, str):
+            task_type = TaskType.from_string(task_type)
+        return self.history.get_by_type(task_type)
     
-    def get_all_records(self):
-        """Получить все записи"""
-        return list(self.__records.values())
-    
-    def get_record_by_id(self, record_id):
-        """Получить запись по ID"""
-        return self.__records.get(record_id)
-    
-    def search_by_service(self, query):
-        """Поиск по названию сервиса"""
-        query_lower = query.lower()
-        return [r for r in self.__records.values() 
-                if query_lower in r.get_service().lower()]
-    
-    def search_by_username(self, query):
-        """Поиск по имени пользователя"""
-        query_lower = query.lower()
-        return [r for r in self.__records.values() 
-                if query_lower in r.get_username().lower()]
-    
-    def filter_by_category(self, category):
-        """Фильтрация по категории"""
-        return [r for r in self.__records.values() 
-                if r.get_category() == category]
+    def filter_by_difficulty(self, difficulty):
+        """Фильтрация задач по сложности"""
+        if isinstance(difficulty, str):
+            difficulty = Difficulty.from_string(difficulty)
+        return self.history.get_by_difficulty(difficulty)
     
     def get_statistics(self):
-        """Получить статистику по паролям"""
+        """Получить статистику по задачам"""
+        tasks = self.history.get_all()
+        
+        if not tasks:
+            return {
+                "total": 0,
+                "by_type": {},
+                "by_difficulty": {},
+                "total_time": 0,
+                "completed": 0
+            }
+        
         stats = {
-            "total": len(self.__records),
-            "by_category": {},
-            "weak_passwords": 0
+            "total": len(tasks),
+            "by_type": {},
+            "by_difficulty": {},
+            "total_time": 0,
+            "completed": sum(1 for t in tasks if t.is_completed())
         }
         
-        for record in self.__records.values():
-            category = record.get_category()
-            stats["by_category"][category] = stats["by_category"].get(category, 0) + 1
+        for task in tasks:
+            # Статистика по типам
+            type_name = task.get_task_type().value
+            stats["by_type"][type_name] = stats["by_type"].get(type_name, 0) + 1
             
-            # Оценка сложности пароля
-            from utils import PasswordGenerator
-            strength = PasswordGenerator.calculate_strength(record.get_password())
-            if strength < 40:
-                stats["weak_passwords"] += 1
+            # Статистика по сложности
+            diff_name = task.get_difficulty().value
+            stats["by_difficulty"][diff_name] = stats["by_difficulty"].get(diff_name, 0) + 1
+            
+            # Общее время
+            stats["total_time"] += task.get_estimated_time()
         
         return stats
     
-    def clear_all(self):
-        """Очистить все записи"""
-        self.__records.clear()
-        self.__undo_stack.clear()
+    def mark_task_completed(self, task_id):
+        """Отметить задачу как выполненную"""
+        tasks = self.history.get_all()
+        for task in tasks:
+            if task.get_id() == task_id:
+                task.complete()
+                return True
+        return False
     
-    def get_count(self):
-        return len(self.__records)
+    def clear_history(self):
+        """Очистить историю"""
+        self.history.clear()
+    
+    def save_history(self):
+        """Сохранить историю в JSON"""
+        tasks = self.history.get_all()
+        self.json_handler.save_history(tasks)
+    
+    def load_history(self):
+        """Загрузить историю из JSON"""
+        tasks = self.json_handler.load_history()
+        for task in tasks:
+            self.history.add(task)
+        return len(tasks)
