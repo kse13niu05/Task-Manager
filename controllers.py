@@ -1,134 +1,134 @@
 """
-Контроллер и менеджер задач
+Контроллер и менеджер паролей
 """
 
-from models import Task, TaskStatus
-from utils import PriorityTaskQueue, UndoStack
+from models import PasswordRecord, PasswordCategory
+from utils import PasswordGenerator, UndoStack
 
-class TaskManager:
-    """Менеджер задач - основная бизнес-логика"""
-
+class PasswordManager:
+    """Менеджер паролей - основная бизнес-логика"""
+    
     def __init__(self):
-        self.__tasks = {}
-        self.__queue = PriorityTaskQueue()
-        self.__undo = UndoStack()
-
-    def add_task(self, title, description, priority):
-        """Добавить задачу"""
-        if not title or not title.strip():
-            raise ValueError("Название не может быть пустым")
-
-        task = Task(title, description, priority)
-        self.__tasks[task.get_id()] = task
-        self.__queue.enqueue(task)
-        self.__undo.push(("add", task.get_id(), None))
-        return task
-
-    def delete_task(self, task_id):
-        """Удалить задачу"""
-        if task_id in self.__tasks:
-            task = self.__tasks[task_id]
-            del self.__tasks[task_id]
-            self.__rebuild_queue()
-            self.__undo.push(("delete", task_id, task.to_dict()))
+        self.__records = {}
+        self.__undo_stack = UndoStack()
+    
+    def add_record(self, service, username, password, category="other", notes=""):
+        """Добавить новую запись пароля"""
+        record = PasswordRecord(service, username, password, category, notes)
+        self.__records[record.get_id()] = record
+        self.__undo_stack.push(("add", record.get_id(), None))
+        return record
+    
+    def delete_record(self, record_id):
+        """Удалить запись по ID"""
+        if record_id in self.__records:
+            deleted = self.__records[record_id]
+            del self.__records[record_id]
+            self.__undo_stack.push(("delete", record_id, deleted.to_dict()))
             return True
         return False
-
-    def update_task(self, task_id, **kwargs):
-        """Обновить задачу"""
-        if task_id in self.__tasks:
-            task = self.__tasks[task_id]
-            old_state = task.to_dict()
-
-            if "title" in kwargs:
-                task.set_title(kwargs["title"])
-            if "description" in kwargs:
-                task.set_description(kwargs["description"])
-            if "priority" in kwargs:
-                task.set_priority(kwargs["priority"])
-            if "status" in kwargs:
-                task.set_status(kwargs["status"])
-
-            if "priority" in kwargs:
-                self.__rebuild_queue()
-
-            self.__undo.push(("update", task_id, old_state))
+    
+    def update_record(self, record_id, **kwargs):
+        """Обновить запись"""
+        if record_id in self.__records:
+            record = self.__records[record_id]
+            old_state = record.to_dict()
+            
+            if "service" in kwargs:
+                record.set_service(kwargs["service"])
+            if "username" in kwargs:
+                record.set_username(kwargs["username"])
+            if "password" in kwargs:
+                record.set_password(kwargs["password"])
+            if "category" in kwargs:
+                record.set_category(kwargs["category"])
+            if "notes" in kwargs:
+                record.set_notes(kwargs["notes"])
+            
+            self.__undo_stack.push(("update", record_id, old_state))
             return True
         return False
-
+    
     def undo(self):
         """Отменить последнее действие"""
-        action = self.__undo.pop()
+        action = self.__undo_stack.pop()
         if not action:
             return "Нечего отменять"
-
-        action_type, task_id, old_data = action
-
+        
+        action_type, record_id, old_data = action
+        
         if action_type == "add":
-            if task_id in self.__tasks:
-                del self.__tasks[task_id]
-                self.__rebuild_queue()
-                return f"Отменено: удалена задача {task_id}"
-
+            if record_id in self.__records:
+                del self.__records[record_id]
+                return f"Отменено: удалена запись {record_id}"
+        
         elif action_type == "delete":
             if old_data:
-                task = Task.from_dict(old_data)
-                self.__tasks[task_id] = task
-                self.__rebuild_queue()
-                return f"Отменено: восстановлена задача {task_id}"
-
+                restored = PasswordRecord.from_dict(old_data)
+                self.__records[record_id] = restored
+                return f"Отменено: восстановлена запись {record_id}"
+        
         elif action_type == "update":
-            if task_id in self.__tasks:
-                task = self.__tasks[task_id]
-                task.set_title(old_data["title"])
-                task.set_description(old_data["description"])
-                task.set_priority(old_data["priority"])
-                task.set_status(old_data["status"])
-                self.__rebuild_queue()
-                return f"Отменено: восстановлена задача {task_id}"
-
+            if record_id in self.__records:
+                record = self.__records[record_id]
+                record.set_service(old_data["service"])
+                record.set_username(old_data["username"])
+                record.set_password(old_data["password"])
+                record.set_category(old_data["category"])
+                record.set_notes(old_data["notes"])
+                return f"Отменено: восстановлена запись {record_id}"
+        
         return "Отмена выполнена"
-
-    def __rebuild_queue(self):
-        """Перестроить очередь"""
-        self.__queue = PriorityTaskQueue()
-        for task in self.__tasks.values():
-            self.__queue.enqueue(task)
-
-    def get_all_tasks(self):
-        """Получить все задачи"""
-        return list(self.__tasks.values())
-
-    def get_task_by_id(self, task_id):
-        """Получить задачу по ID"""
-        return self.__tasks.get(task_id)
-
-    def get_tasks_by_priority(self):
-        """Получить задачи, отсортированные по приоритету"""
-        return self.__queue.get_all()
-
-    def filter_by_status(self, status):
-        """Фильтр по статусу"""
-        if isinstance(status, str):
-            status = TaskStatus.from_string(status)
-        return [t for t in self.__tasks.values() if t.get_status() == status]
-
-    def filter_by_priority(self, priority):
-        """Фильтр по приоритету"""
-        return [t for t in self.__tasks.values() if t.get_priority() == priority]
-
-    def search(self, query):
-        """Поиск задач"""
+    
+    def get_all_records(self):
+        """Получить все записи"""
+        return list(self.__records.values())
+    
+    def get_record_by_id(self, record_id):
+        """Получить запись по ID"""
+        return self.__records.get(record_id)
+    
+    def search_by_service(self, query):
+        """Поиск по названию сервиса"""
         query_lower = query.lower()
-        return [t for t in self.__tasks.values()
-                if query_lower in t.get_title().lower()
-                or query_lower in t.get_description().lower()]
-
-    def clear(self):
-        """Очистить все задачи"""
-        self.__tasks.clear()
-        self.__queue = PriorityTaskQueue()
-        self.__undo.clear()
-
+        return [r for r in self.__records.values() 
+                if query_lower in r.get_service().lower()]
+    
+    def search_by_username(self, query):
+        """Поиск по имени пользователя"""
+        query_lower = query.lower()
+        return [r for r in self.__records.values() 
+                if query_lower in r.get_username().lower()]
+    
+    def filter_by_category(self, category):
+        """Фильтрация по категории"""
+        return [r for r in self.__records.values() 
+                if r.get_category() == category]
+    
+    def get_statistics(self):
+        """Получить статистику по паролям"""
+        stats = {
+            "total": len(self.__records),
+            "by_category": {},
+            "weak_passwords": 0
+        }
+        
+        for record in self.__records.values():
+            category = record.get_category()
+            stats["by_category"][category] = stats["by_category"].get(category, 0) + 1
+            
+            # Оценка сложности пароля
+            from utils import PasswordGenerator
+            strength = PasswordGenerator.calculate_strength(record.get_password())
+            if strength < 40:
+                stats["weak_passwords"] += 1
+        
+        return stats
+    
+    def clear_all(self):
+        """Очистить все записи"""
+        self.__records.clear()
+        self.__undo_stack.clear()
+    
     def get_count(self):
-        return len(self.__tasks)
+        return len(self.__records)
