@@ -1,134 +1,159 @@
 """
-Модели данных приложения
-Содержит классы Task и TaskStatus
+Модели данных приложения Password Manager
+Содержит классы PasswordRecord и PasswordCategory
 """
 
-from enum import Enum
 import uuid
 from datetime import datetime
+import re
 
-class TaskStatus(Enum):
-    """Статусы задач"""
-    TO_DO = "To Do"
-    IN_PROGRESS = "In Progress"
-    DONE = "Done"
+class PasswordCategory:
+    """Категории паролей"""
+    
+    CATEGORIES = {
+        "social": "Социальные сети",
+        "email": "Электронная почта",
+        "banking": "Банки и финансы",
+        "work": "Рабочие",
+        "entertainment": "Развлечения",
+        "other": "Другое"
+    }
     
     @classmethod
-    def get_russian(cls, status):
-        """Возвращает русское название статуса"""
-        russian = {
-            "To Do": "Нужно сделать",
-            "In Progress": "В процессе",
-            "Done": "Готово"
-        }
-        if isinstance(status, TaskStatus):
-            return russian[status.value]
-        return russian.get(status, status)
+    def get_all(cls):
+        """Получить все категории"""
+        return list(cls.CATEGORIES.keys())
     
     @classmethod
-    def from_string(cls, status_str):
-        """Преобразует строку в статус"""
-        # Проверка английских названий
-        for status in cls:
-            if status.value.lower() == status_str.lower():
-                return status
-        
-        # Проверка русских названий
-        russian_map = {
-            "нужно сделать": cls.TO_DO,
-            "в процессе": cls.IN_PROGRESS,
-            "готово": cls.DONE
-        }
-        if status_str.lower() in russian_map:
-            return russian_map[status_str.lower()]
-        
-        raise ValueError(f"Неверный статус: {status_str}")
-
-
-class Task:
-    """Класс задачи"""
+    def get_display_name(cls, category):
+        """Получить отображаемое имя категории"""
+        return cls.CATEGORIES.get(category, category)
     
-    def __init__(self, title, description, priority, status=None, task_id=None, created_at=None):
-        self.__task_id = task_id if task_id else str(uuid.uuid4())[:8]
-        self.__title = title
-        self.__description = description
-        self.__priority = priority
-        self.__status = status if status else TaskStatus.TO_DO
+    @classmethod
+    def is_valid(cls, category):
+        """Проверить валидность категории"""
+        return category in cls.CATEGORIES
+
+
+class PasswordRecord:
+    """Класс записи пароля"""
+    
+    def __init__(self, service, username, password, category="other", 
+                 notes="", record_id=None, created_at=None, updated_at=None):
+        self.__record_id = record_id if record_id else str(uuid.uuid4())[:8]
+        self.__service = service
+        self.__username = username
+        self.__password = password
+        self.__category = category
+        self.__notes = notes
         self.__created_at = created_at if created_at else datetime.now().strftime("%d.%m.%Y %H:%M")
+        self.__updated_at = updated_at if updated_at else datetime.now().strftime("%d.%m.%Y %H:%M")
     
     # Геттеры
     def get_id(self):
-        return self.__task_id
+        return self.__record_id
     
-    def get_title(self):
-        return self.__title
+    def get_service(self):
+        return self.__service
     
-    def get_description(self):
-        return self.__description
+    def get_username(self):
+        return self.__username
     
-    def get_priority(self):
-        return self.__priority
+    def get_password(self):
+        return self.__password
     
-    def get_status(self):
-        return self.__status
+    def get_category(self):
+        return self.__category
+    
+    def get_notes(self):
+        return self.__notes
     
     def get_created_at(self):
         return self.__created_at
     
+    def get_updated_at(self):
+        return self.__updated_at
+    
     # Сеттеры с валидацией
-    def set_title(self, title):
-        if not title or not title.strip():
-            raise ValueError("Название не может быть пустым")
-        self.__title = title.strip()
+    def set_service(self, service):
+        if not service or not service.strip():
+            raise ValueError("Название сервиса не может быть пустым")
+        if len(service) > 100:
+            raise ValueError("Название сервиса не может превышать 100 символов")
+        self.__service = service.strip()
+        self.__update_timestamp()
     
-    def set_description(self, description):
-        self.__description = description.strip() if description else ""
+    def set_username(self, username):
+        if not username or not username.strip():
+            raise ValueError("Имя пользователя не может быть пустым")
+        if len(username) > 100:
+            raise ValueError("Имя пользователя не может превышать 100 символов")
+        self.__username = username.strip()
+        self.__update_timestamp()
     
-    def set_priority(self, priority):
-        valid_priorities = ["Низкий", "Средний", "Высокий"]
-        # Поддержка английских названий
-        priority_map = {
-            "Low": "Низкий", "Medium": "Средний", "High": "Высокий",
-            "Низкий": "Низкий", "Средний": "Средний", "Высокий": "Высокий"
-        }
-        priority = priority_map.get(priority, priority)
-        if priority not in valid_priorities:
-            raise ValueError(f"Приоритет должен быть: {', '.join(valid_priorities)}")
-        self.__priority = priority
+    def set_password(self, password):
+        if not password:
+            raise ValueError("Пароль не может быть пустым")
+        if len(password) < 4:
+            raise ValueError("Пароль должен содержать минимум 4 символа")
+        if len(password) > 128:
+            raise ValueError("Пароль не может превышать 128 символов")
+        self.__password = password
+        self.__update_timestamp()
     
-    def set_status(self, status):
-        if isinstance(status, str):
-            status = TaskStatus.from_string(status)
-        self.__status = status
+    def set_category(self, category):
+        if not PasswordCategory.is_valid(category):
+            valid = ", ".join(PasswordCategory.get_all())
+            raise ValueError(f"Категория должна быть одной из: {valid}")
+        self.__category = category
+        self.__update_timestamp()
     
-    def get_priority_value(self):
-        """Числовое значение приоритета для сортировки"""
-        values = {"Низкий": 1, "Средний": 2, "Высокий": 3}
-        return values.get(self.__priority, 1)
+    def set_notes(self, notes):
+        if notes and len(notes) > 500:
+            raise ValueError("Заметки не могут превышать 500 символов")
+        self.__notes = notes.strip() if notes else ""
+        self.__update_timestamp()
+    
+    def __update_timestamp(self):
+        """Обновить временную метку изменения"""
+        self.__updated_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+    
+    def get_category_display(self):
+        """Получить отображаемое имя категории"""
+        return PasswordCategory.get_display_name(self.__category)
     
     def to_dict(self):
         """Преобразование в словарь для JSON"""
         return {
-            "task_id": self.__task_id,
-            "title": self.__title,
-            "description": self.__description,
-            "priority": self.__priority,
-            "status": self.__status.value,
-            "created_at": self.__created_at
+            "record_id": self.__record_id,
+            "service": self.__service,
+            "username": self.__username,
+            "password": self.__password,
+            "category": self.__category,
+            "notes": self.__notes,
+            "created_at": self.__created_at,
+            "updated_at": self.__updated_at
         }
     
     @classmethod
     def from_dict(cls, data):
-        """Создание задачи из словаря"""
-        status = TaskStatus.from_string(data["status"])
+        """Создание записи из словаря"""
         return cls(
-            title=data["title"],
-            description=data["description"],
-            priority=data["priority"],
-            status=status,
-            task_id=data["task_id"],
-            created_at=data["created_at"]
+            service=data["service"],
+            username=data["username"],
+            password=data["password"],
+            category=data["category"],
+            notes=data.get("notes", ""),
+            record_id=data["record_id"],
+            created_at=data["created_at"],
+            updated_at=data["updated_at"]
         )
     
+    def get_masked_password(self):
+        """Получить маскированный пароль для отображения"""
+        if len(self.__password) <= 8:
+            return "*" * len(self.__password)
+        return self.__password[:4] + "*" * (len(self.__password) - 8) + self.__password[-4:]
+    
     def __str__(self):
-        return f"[{self.__task_id}] {self.__title} | Приоритет: {self.__priority}"
+        return f"[{self.__record_id}] {self.__service} | {self.__username} | {self.get_category_display()}"
