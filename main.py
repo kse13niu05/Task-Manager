@@ -1,337 +1,219 @@
 #!/usr/bin/env python3
 """
-Password Manager - Консольное приложение для управления паролями
+Random Task Generator - Консольное приложение для генерации случайных задач
 Автор: Студент
-Описание: Приложение для безопасного хранения и управления паролями
-         с функцией генерации сложных паролей.
+Описание: Приложение генерирует случайные задачи разных типов с использованием
+         паттерна Factory для создания объектов и очереди для хранения истории.
 """
 
-from controllers import PasswordManager
+from controllers import TaskManagerController
 from views import ConsoleView
-from utils import PasswordGenerator, JSONHandler
 
-class PasswordManagerController:
-    """Контроллер приложения"""
+class Application:
+    """Главный класс приложения"""
     
     def __init__(self):
-        self.manager = PasswordManager()
+        self.controller = TaskManagerController()
         self.view = ConsoleView()
-        self.json_handler = JSONHandler()
         self.running = True
     
     def run(self):
         """Запуск приложения"""
-        self.load_data()
+        self.view.display_message("Добро пожаловать в Random Task Generator!", is_success=True)
+        
+        # Попытка загрузить сохраненную историю
+        try:
+            count = self.controller.load_history()
+            if count > 0:
+                self.view.display_message(f"Загружено {count} задач из истории")
+        except Exception as e:
+            self.view.display_message(f"Не удалось загрузить историю: {e}", is_error=True)
         
         while self.running:
+            self.view.clear_screen()
             self.view.display_header()
             self.view.display_menu()
             
-            choice = self.view.get_choice("\nВаш выбор (1-9): ", 1, 9)
+            choice = self.view.get_choice("\nВаш выбор (0-9): ", 0, 9)
             
             actions = {
-                1: self.add_password,
-                2: self.view_all_passwords,
-                3: self.search_passwords,
-                4: self.edit_password,
-                5: self.delete_password,
-                6: self.generate_password,
-                7: self.show_statistics,
-                8: self.undo_action,
-                9: self.exit_app
+                1: self.generate_random_task,
+                2: self.add_custom_task,
+                3: self.show_history,
+                4: self.filter_tasks,
+                5: self.mark_completed,
+                6: self.show_statistics,
+                7: self.save_history,
+                8: self.load_history,
+                9: self.clear_history,
+                0: self.exit_app
             }
             
             actions.get(choice, lambda: None)()
     
-    def add_password(self):
-        """Добавление нового пароля"""
-        print("\n--- ДОБАВЛЕНИЕ НОВОГО ПАРОЛЯ ---")
+    def generate_random_task(self):
+        """Генерация случайной задачи"""
+        print("\n--- ГЕНЕРАЦИЯ СЛУЧАЙНОЙ ЗАДАЧИ ---")
         
-        service = self.view.get_string_input("Название сервиса: ", required=True, max_length=100)
-        username = self.view.get_string_input("Имя пользователя / Email: ", required=True, max_length=100)
+        # Опционально: выбор типа и сложности
+        use_filters = self.view.get_confirm("Хотите задать тип или сложность? (y/n): ")
         
-        # Выбор способа ввода пароля
-        print("\nСпособы ввода пароля:")
-        print("1. Ввести пароль вручную")
-        print("2. Сгенерировать пароль")
-        password_choice = self.view.get_choice("Выберите способ (1-2): ", 1, 2)
+        task_type = None
+        difficulty = None
         
-        if password_choice == 2:
-            settings = self.view.get_generator_settings()
-            password = PasswordGenerator.generate(**settings)
-            self.view.display_generated_password(
-                password,
-                PasswordGenerator.calculate_strength(password),
-                PasswordGenerator.get_strength_label(PasswordGenerator.calculate_strength(password))
-            )
+        if use_filters:
+            filter_choice = self.view.get_choice("Выбрать тип (1) или сложность (2) или оба (3): ", 1, 3)
             
-            if not self.view.get_confirm("Использовать этот пароль? (y/n): "):
-                password = self.view.get_password_input("Введите пароль вручную: ")
-        else:
-            password = self.view.get_password_input("Введите пароль: ")
-        
-        self.view.display_categories()
-        category = self.view.get_string_input("Выберите категорию: ", required=True, max_length=20)
-        
-        # Проверка категории
-        from models import PasswordCategory
-        if not PasswordCategory.is_valid(category):
-            print("❌ Неверная категория, выбрана 'other'")
-            category = "other"
-        
-        notes = self.view.get_string_input("Заметки (необязательно): ", required=False, max_length=500)
+            if filter_choice in [1, 3]:
+                task_type = self.view.get_task_type_choice()
+            
+            if filter_choice in [2, 3]:
+                difficulty = self.view.get_difficulty_choice()
         
         try:
-            record = self.manager.add_record(service, username, password, category, notes)
-            self.view.display_message(f"Пароль успешно добавлен! ID: {record.get_id()}", is_success=True)
-            self.save_data()
+            task = self.controller.generate_random_task(task_type, difficulty)
+            self.view.display_generated_task(task)
+            self.view.display_message("Задача добавлена в историю!", is_success=True)
         except Exception as e:
             self.view.display_message(str(e), is_error=True)
         
         self.view.wait_for_enter()
     
-    def view_all_passwords(self):
-        """Просмотр всех паролей"""
-        records = self.manager.get_all_records()
+    def add_custom_task(self):
+        """Добавление своей задачи"""
+        print("\n--- ДОБАВЛЕНИЕ СВОЕЙ ЗАДАЧИ ---")
         
-        if not records:
-            self.view.display_message("Нет сохраненных паролей", is_error=True)
-        else:
-            self.view.display_records(records, "ВСЕ ПАРОЛИ")
-            
-            # Показать детали выбранной записи
-            if self.view.get_confirm("\nПоказать полный пароль для записи? (y/n): "):
-                record_id = self.view.get_string_input("Введите ID записи: ", required=True, max_length=8)
-                record = self.manager.get_record_by_id(record_id)
-                if record:
-                    self.view.display_record_detail(record)
-                else:
-                    self.view.display_message(f"Запись с ID {record_id} не найдена", is_error=True)
+        task_type = self.view.get_task_type_choice()
+        description = self.view.get_string_input("Описание задачи: ", required=True, max_length=200)
+        difficulty = self.view.get_difficulty_choice()
+        
+        try:
+            task = self.controller.add_custom_task(task_type, description, difficulty)
+            self.view.display_message(f"Задача успешно добавлена! ID: {task.get_id()}", is_success=True)
+            self.view.display_task(task)
+        except Exception as e:
+            self.view.display_message(str(e), is_error=True)
         
         self.view.wait_for_enter()
     
-    def search_passwords(self):
-        """Поиск паролей"""
+    def show_history(self):
+        """Показать историю задач"""
+        tasks = self.controller.get_all_tasks()
+        
+        if not tasks:
+            self.view.display_message("История пуста. Сгенерируйте или добавьте задачи.", is_error=True)
+        else:
+            self.view.display_tasks(tasks, "ИСТОРИЯ ЗАДАЧ")
+            
+            # Показать детали выбранной задачи
+            if self.view.get_confirm("\nПоказать детали задачи? (y/n): "):
+                task_id = self.view.get_string_input("Введите ID задачи: ", required=True)
+                task = next((t for t in tasks if t.get_id() == task_id), None)
+                if task:
+                    self.view.display_task(task, show_full_description=True)
+                else:
+                    self.view.display_message(f"Задача с ID {task_id} не найдена", is_error=True)
+        
+        self.view.wait_for_enter()
+    
+    def filter_tasks(self):
+        """Фильтрация задач"""
         while True:
-            self.view.display_search_menu()
-            choice = self.view.get_choice("Выберите действие (1-4): ", 1, 4)
+            self.view.display_filter_menu()
+            choice = self.view.get_choice("Выберите действие (1-3): ", 1, 3)
             
             if choice == 1:
-                query = self.view.get_string_input("Введите название сервиса: ", required=True)
-                results = self.manager.search_by_service(query)
-                self.view.display_records(results, f"РЕЗУЛЬТАТЫ ПОИСКА ПО СЕРВИСУ: {query}")
+                task_type = self.view.get_task_type_choice()
+                filtered = self.controller.filter_by_type(task_type)
+                self.view.display_tasks(filtered, f"ЗАДАЧИ ТИПА: {task_type.value}")
             
             elif choice == 2:
-                query = self.view.get_string_input("Введите имя пользователя: ", required=True)
-                results = self.manager.search_by_username(query)
-                self.view.display_records(results, f"РЕЗУЛЬТАТЫ ПОИСКА ПО ПОЛЬЗОВАТЕЛЮ: {query}")
-            
-            elif choice == 3:
-                self.view.display_categories()
-                category = self.view.get_string_input("Выберите категорию: ", required=True)
-                from models import PasswordCategory
-                if PasswordCategory.is_valid(category):
-                    results = self.manager.filter_by_category(category)
-                    display_name = PasswordCategory.get_display_name(category)
-                    self.view.display_records(results, f"ЗАПИСИ В КАТЕГОРИИ: {display_name}")
-                else:
-                    self.view.display_message("Неверная категория", is_error=True)
+                difficulty = self.view.get_difficulty_choice()
+                filtered = self.controller.filter_by_difficulty(difficulty)
+                self.view.display_tasks(filtered, f"ЗАДАЧИ СЛОЖНОСТИ: {difficulty.value}")
             
             else:
                 break
             
-            if results:
-                if self.view.get_confirm("\nПоказать полный пароль для записи? (y/n): "):
-                    record_id = self.view.get_string_input("Введите ID записи: ", required=True, max_length=8)
-                    record = self.manager.get_record_by_id(record_id)
-                    if record:
-                        self.view.display_record_detail(record)
-                    else:
-                        self.view.display_message(f"Запись с ID {record_id} не найдена", is_error=True)
-            
             self.view.wait_for_enter()
     
-    def edit_password(self):
-        """Редактирование пароля"""
-        record_id = self.view.get_string_input("Введите ID записи для редактирования: ", required=True, max_length=8)
-        record = self.manager.get_record_by_id(record_id)
+    def mark_completed(self):
+        """Отметить задачу выполненной"""
+        tasks = self.controller.get_all_tasks()
         
-        if not record:
-            self.view.display_message(f"Запись с ID {record_id} не найдена", is_error=True)
+        if not tasks:
+            self.view.display_message("Нет задач для отметки", is_error=True)
             self.view.wait_for_enter()
             return
         
-        self.view.display_update_menu()
-        print(f"\nТекущий сервис: {record.get_service()}")
-        new_service = self.view.get_string_input("Новый сервис (Enter - не менять): ", required=False, max_length=100)
+        self.view.display_tasks(tasks, "ВЫБЕРИТЕ ЗАДАЧУ")
+        task_id = self.view.get_string_input("\nВведите ID задачи для отметки: ", required=True)
         
-        print(f"\nТекущий пользователь: {record.get_username()}")
-        new_username = self.view.get_string_input("Новый пользователь (Enter - не менять): ", required=False, max_length=100)
-        
-        print("\nВыберите действие для пароля:")
-        print("1. Оставить текущий пароль")
-        print("2. Ввести новый вручную")
-        print("3. Сгенерировать новый")
-        pass_choice = self.view.get_choice("Выберите (1-3): ", 1, 3)
-        
-        new_password = None
-        if pass_choice == 2:
-            new_password = self.view.get_password_input("Введите новый пароль: ")
-        elif pass_choice == 3:
-            settings = self.view.get_generator_settings()
-            new_password = PasswordGenerator.generate(**settings)
-            self.view.display_generated_password(
-                new_password,
-                PasswordGenerator.calculate_strength(new_password),
-                PasswordGenerator.get_strength_label(PasswordGenerator.calculate_strength(new_password))
-            )
-            if not self.view.get_confirm("Использовать этот пароль? (y/n): "):
-                new_password = self.view.get_password_input("Введите пароль вручную: ")
-        
-        print(f"\nТекущая категория: {record.get_category_display()}")
-        self.view.display_categories()
-        new_category = self.view.get_string_input("Новая категория (Enter - не менять): ", required=False, max_length=20)
-        
-        print(f"\nТекущие заметки: {record.get_notes()}")
-        new_notes = self.view.get_string_input("Новые заметки (Enter - не менять): ", required=False, max_length=500)
-        
-        try:
-            updates = {}
-            if new_service:
-                updates['service'] = new_service
-            if new_username:
-                updates['username'] = new_username
-            if new_password:
-                updates['password'] = new_password
-            if new_category:
-                from models import PasswordCategory
-                if PasswordCategory.is_valid(new_category):
-                    updates['category'] = new_category
-            if new_notes:
-                updates['notes'] = new_notes
-            
-            if updates:
-                self.manager.update_record(record_id, **updates)
-                self.view.display_message("Запись успешно обновлена", is_success=True)
-                self.save_data()
-            else:
-                self.view.display_message("Изменения не внесены")
-        except Exception as e:
-            self.view.display_message(str(e), is_error=True)
-        
-        self.view.wait_for_enter()
-    
-    def delete_password(self):
-        """Удаление пароля"""
-        record_id = self.view.get_string_input("Введите ID записи для удаления: ", required=True, max_length=8)
-        record = self.manager.get_record_by_id(record_id)
-        
-        if not record:
-            self.view.display_message(f"Запись с ID {record_id} не найдена", is_error=True)
+        if self.controller.mark_task_completed(task_id):
+            self.view.display_message("Задача отмечена как выполненная! 🎉", is_success=True)
         else:
-            print(f"\nЗапись для удаления:")
-            print(f"  Сервис: {record.get_service()}")
-            print(f"  Пользователь: {record.get_username()}")
-            
-            if self.view.get_confirm("\nВы уверены, что хотите удалить эту запись? (y/n): "):
-                if self.manager.delete_record(record_id):
-                    self.view.display_message("Запись успешно удалена", is_success=True)
-                    self.save_data()
-                else:
-                    self.view.display_message("Не удалось удалить запись", is_error=True)
-        
-        self.view.wait_for_enter()
-    
-    def generate_password(self):
-        """Генерация пароля"""
-        self.view.display_password_generator_menu()
-        settings = self.view.get_generator_settings()
-        
-        try:
-            password = PasswordGenerator.generate(**settings)
-            strength = PasswordGenerator.calculate_strength(password)
-            label = PasswordGenerator.get_strength_label(strength)
-            
-            self.view.display_generated_password(password, strength, label)
-            
-            if self.view.get_confirm("\nСохранить этот пароль как новую запись? (y/n): "):
-                service = self.view.get_string_input("Название сервиса: ", required=True)
-                username = self.view.get_string_input("Имя пользователя: ", required=True)
-                
-                self.view.display_categories()
-                category = self.view.get_string_input("Категория (по умолчанию other): ", required=False)
-                if not category:
-                    category = "other"
-                
-                from models import PasswordCategory
-                if not PasswordCategory.is_valid(category):
-                    category = "other"
-                
-                notes = self.view.get_string_input("Заметки: ", required=False)
-                
-                self.manager.add_record(service, username, password, category, notes)
-                self.view.display_message("Пароль сохранен!", is_success=True)
-                self.save_data()
-        except Exception as e:
-            self.view.display_message(str(e), is_error=True)
+            self.view.display_message(f"Задача с ID {task_id} не найдена", is_error=True)
         
         self.view.wait_for_enter()
     
     def show_statistics(self):
         """Показать статистику"""
-        stats = self.manager.get_statistics()
+        stats = self.controller.get_statistics()
         self.view.display_statistics(stats)
         self.view.wait_for_enter()
     
-    def undo_action(self):
-        """Отмена последнего действия"""
-        result = self.manager.undo()
-        self.view.display_message(result)
-        self.save_data()
+    def save_history(self):
+        """Сохранить историю"""
+        try:
+            self.controller.save_history()
+            count = len(self.controller.get_all_tasks())
+            self.view.display_message(f"Сохранено {count} задач в файл task_history.json", is_success=True)
+        except Exception as e:
+            self.view.display_message(str(e), is_error=True)
+        
         self.view.wait_for_enter()
     
-    def load_data(self):
-        """Загрузка данных из файла"""
+    def load_history(self):
+        """Загрузить историю"""
         try:
-            records = self.json_handler.load()
-            for record in records:
-                self.manager.add_record(
-                    record.get_service(),
-                    record.get_username(),
-                    record.get_password(),
-                    record.get_category(),
-                    record.get_notes()
-                )
-            if records:
-                self.view.display_message(f"Загружено {len(records)} записей", is_success=True)
+            count = self.controller.load_history()
+            self.view.display_message(f"Загружено {count} задач из файла", is_success=True)
         except Exception as e:
-            self.view.display_message(f"Ошибка загрузки: {e}", is_error=True)
+            self.view.display_message(str(e), is_error=True)
+        
+        self.view.wait_for_enter()
     
-    def save_data(self):
-        """Сохранение данных в файл"""
-        try:
-            records = self.manager.get_all_records()
-            self.json_handler.save(records)
-        except Exception as e:
-            self.view.display_message(f"Ошибка сохранения: {e}", is_error=True)
+    def clear_history(self):
+        """Очистить историю"""
+        if self.view.get_confirm("Вы уверены, что хотите очистить всю историю? (y/n): "):
+            self.controller.clear_history()
+            self.view.display_message("История очищена", is_success=True)
+        
+        self.view.wait_for_enter()
     
     def exit_app(self):
         """Выход из приложения"""
-        if self.view.get_confirm("\nСохранить изменения перед выходом? (y/n): "):
-            self.save_data()
-        self.view.display_message("До свидания!", is_success=True)
+        if self.view.get_confirm("\nСохранить историю перед выходом? (y/n): "):
+            try:
+                self.controller.save_history()
+                self.view.display_message("История сохранена", is_success=True)
+            except Exception as e:
+                self.view.display_message(f"Ошибка сохранения: {e}", is_error=True)
+        
+        self.view.display_message("До свидания! 👋", is_success=True)
         self.running = False
 
 
 def main():
     """Точка входа в приложение"""
     try:
-        app = PasswordManagerController()
+        app = Application()
         app.run()
     except KeyboardInterrupt:
         print("\n\n❌ Программа прервана пользователем")
     except Exception as e:
         print(f"\n❌ Критическая ошибка: {e}")
+
 
 if __name__ == "__main__":
     main()
