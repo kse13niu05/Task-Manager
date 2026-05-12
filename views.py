@@ -1,12 +1,11 @@
 """
-Консольный интерфейс пользователя
+Консольное представление для Random Task Generator
 """
 
-from models import PasswordCategory
-from utils import PasswordGenerator
+from models import TaskType, Difficulty
 
 class ConsoleView:
-    """Консольный интерфейс"""
+    """Консольный интерфейс пользователя"""
     
     @staticmethod
     def clear_screen():
@@ -17,145 +16,129 @@ class ConsoleView:
     @staticmethod
     def display_header():
         """Отображение заголовка"""
-        print("\n" + "=" * 60)
-        print("         🔐 PASSWORD MANAGER 🔐")
-        print("=" * 60)
+        print("\n" + "=" * 70)
+        print("         🎲 RANDOM TASK GENERATOR 🎲")
+        print("=" * 70)
     
     @staticmethod
     def display_menu():
         """Отображение главного меню"""
-        print("\n" + "-" * 60)
+        print("\n" + "-" * 70)
         print("ГЛАВНОЕ МЕНЮ")
-        print("-" * 60)
-        print("1. 📝 Добавить пароль")
-        print("2. 📋 Просмотреть все пароли")
-        print("3. 🔍 Поиск паролей")
-        print("4. ✏️ Редактировать пароль")
-        print("5. 🗑️ Удалить пароль")
-        print("6. 🔧 Генератор паролей")
-        print("7. 📊 Статистика")
-        print("8. ↩️ Отменить последнее действие")
-        print("9. 💾 Сохранить и выйти")
-        print("-" * 60)
+        print("-" * 70)
+        print("1. 🎲 Сгенерировать случайную задачу")
+        print("2. 🔧 Добавить свою задачу")
+        print("3. 📋 Показать историю задач")
+        print("4. 🔍 Фильтрация задач")
+        print("5. ✅ Отметить задачу выполненной")
+        print("6. 📊 Статистика")
+        print("7. 💾 Сохранить историю")
+        print("8. 📂 Загрузить историю")
+        print("9. 🗑️ Очистить историю")
+        print("0. 🚪 Выход")
+        print("-" * 70)
     
     @staticmethod
-    def display_search_menu():
-        """Меню поиска"""
-        print("\n--- ПОИСК ПАРОЛЕЙ ---")
-        print("1. По названию сервиса")
-        print("2. По имени пользователя")
-        print("3. По категории")
-        print("4. Назад")
+    def display_filter_menu():
+        """Меню фильтрации"""
+        print("\n--- ФИЛЬТРАЦИЯ ЗАДАЧ ---")
+        print("1. По типу")
+        print("2. По сложности")
+        print("3. Назад")
     
     @staticmethod
-    def display_categories():
-        """Отображение категорий"""
-        print("\nДоступные категории:")
-        for key, value in PasswordCategory.CATEGORIES.items():
-            print(f"  {key} - {value}")
+    def display_task_types():
+        """Отображение доступных типов задач"""
+        print("\nДоступные типы задач:")
+        for i, task_type in enumerate(TaskType.get_all(), 1):
+            icon_map = {
+                TaskType.WORK: "💼",
+                TaskType.SPORT: "🏃",
+                TaskType.STUDY: "📚",
+                TaskType.HOBBY: "🎨",
+                TaskType.HEALTH: "🏥",
+                TaskType.SOCIAL: "👥"
+            }
+            icon = icon_map.get(task_type, "📌")
+            print(f"  {i}. {icon} {task_type.value}")
     
     @staticmethod
-    def display_records(records, title="СПИСОК ПАРОЛЕЙ"):
-        """Отображение списка записей"""
-        if not records:
-            print("\n❌ Записи не найдены")
+    def display_difficulties():
+        """Отображение уровней сложности"""
+        print("\nУровни сложности:")
+        difficulties = ["Легкая", "Средняя", "Сложная"]
+        for i, diff in enumerate(difficulties, 1):
+            print(f"  {i}. {diff}")
+    
+    @staticmethod
+    def display_task(task, show_full_description=True):
+        """Отображение одной задачи"""
+        icon = task.get_icon()
+        status = "✅" if task.is_completed() else "⏳"
+        
+        print(f"\n{icon} {status} [{task.get_id()}]")
+        print(f"   Описание: {task.get_description()}")
+        print(f"   Тип: {task.get_task_type().value}")
+        print(f"   Сложность: {task.get_difficulty().value}")
+        print(f"   Время: {task.get_estimated_time()} мин.")
+        print(f"   Создана: {task.get_created_at()}")
+    
+    @staticmethod
+    def display_tasks(tasks, title="ИСТОРИЯ ЗАДАЧ"):
+        """Отображение списка задач"""
+        if not tasks:
+            print("\n❌ Задачи не найдены")
             return
         
-        print(f"\n{'='*60}")
-        print(f"{title}: {len(records)} записей")
-        print(f"{'='*60}")
+        print(f"\n{'='*70}")
+        print(f"{title}: {len(tasks)} задач(и)")
+        print(f"{'='*70}")
         
-        for i, record in enumerate(records, 1):
-            print(f"\n{i}. ID: {record.get_id()}")
-            print(f"   Сервис: {record.get_service()}")
-            print(f"   Пользователь: {record.get_username()}")
-            print(f"   Пароль: {record.get_masked_password()}")
-            print(f"   Категория: {record.get_category_display()}")
-            print(f"   Заметки: {record.get_notes()[:50]}{'...' if len(record.get_notes()) > 50 else ''}")
-            print(f"   Создан: {record.get_created_at()}")
-            print(f"   Изменен: {record.get_updated_at()}")
-            
-            # Оценка сложности пароля
-            strength_score = PasswordGenerator.calculate_strength(record.get_password())
-            strength_label = PasswordGenerator.get_strength_label(strength_score)
-            print(f"   Сложность пароля: {strength_label} ({strength_score}/100)")
+        for i, task in enumerate(tasks, 1):
+            icon = task.get_icon()
+            status = "✅" if task.is_completed() else "⏳"
+            print(f"\n{i}. {icon} {status} [{task.get_id()}]")
+            print(f"   {task.get_description()}")
+            print(f"   📍 {task.get_task_type().value} | 🎯 {task.get_difficulty().value} | ⏱️ {task.get_estimated_time()} мин.")
         
-        print(f"\n{'-'*60}")
-    
-    @staticmethod
-    def display_record_detail(record):
-        """Отображение деталей одной записи"""
-        print("\n" + "=" * 60)
-        print("ДЕТАЛИ ЗАПИСИ")
-        print("=" * 60)
-        print(f"ID: {record.get_id()}")
-        print(f"Сервис: {record.get_service()}")
-        print(f"Пользователь: {record.get_username()}")
-        print(f"Пароль: {record.get_password()}")  # Полный пароль
-        print(f"Категория: {record.get_category_display()}")
-        print(f"Заметки: {record.get_notes()}")
-        print(f"Создан: {record.get_created_at()}")
-        print(f"Изменен: {record.get_updated_at()}")
-        
-        strength = PasswordGenerator.calculate_strength(record.get_password())
-        print(f"Сложность пароля: {PasswordGenerator.get_strength_label(strength)} ({strength}/100)")
-        print("=" * 60)
+        print(f"\n{'-'*70}")
     
     @staticmethod
     def display_statistics(stats):
         """Отображение статистики"""
-        print("\n" + "=" * 60)
-        print("СТАТИСТИКА ПАРОЛЕЙ")
-        print("=" * 60)
-        print(f"Всего записей: {stats['total']}")
-        print(f"Слабых паролей: {stats['weak_passwords']}")
-        print("\nПо категориям:")
-        for category, count in stats['by_category'].items():
-            display_name = PasswordCategory.get_display_name(category)
-            print(f"  {display_name}: {count}")
-        print("=" * 60)
-    
-    @staticmethod
-    def display_password_generator_menu():
-        """Меню генератора паролей"""
-        print("\n" + "=" * 60)
-        print("ГЕНЕРАТОР ПАРОЛЕЙ")
-        print("=" * 60)
-    
-    @staticmethod
-    def get_generator_settings():
-        """Получение настроек генерации"""
-        print("\nНастройки генерации пароля:")
+        print("\n" + "=" * 70)
+        print("СТАТИСТИКА ЗАДАЧ")
+        print("=" * 70)
+        print(f"Всего задач: {stats['total']}")
+        print(f"Выполнено: {stats['completed']}")
         
-        try:
-            length_input = input("Длина пароля (по умолчанию 12, min 4, max 128): ").strip()
-            length = int(length_input) if length_input else 12
-            if length < 4:
-                print("❌ Длина не может быть меньше 4, установлено 4")
-                length = 4
-            elif length > 128:
-                print("❌ Длина не может быть больше 128, установлено 128")
-                length = 128
-            
-            use_uppercase = input("Использовать заглавные буквы? (y/n, по умолчанию y): ").strip().lower() != 'n'
-            use_lowercase = input("Использовать строчные буквы? (y/n, по умолчанию y): ").strip().lower() != 'n'
-            use_digits = input("Использовать цифры? (y/n, по умолчанию y): ").strip().lower() != 'n'
-            use_special = input("Использовать спецсимволы? (y/n, по умолчанию y): ").strip().lower() != 'n'
-            
-            return {
-                'length': length,
-                'use_uppercase': use_uppercase,
-                'use_lowercase': use_lowercase,
-                'use_digits': use_digits,
-                'use_special': use_special
-            }
-        except ValueError:
-            print("❌ Неверный ввод, используются настройки по умолчанию")
-            return {'length': 12, 'use_uppercase': True, 'use_lowercase': True, 
-                    'use_digits': True, 'use_special': True}
+        if stats['total'] > 0:
+            completion_rate = (stats['completed'] / stats['total']) * 100
+            print(f"Прогресс: {completion_rate:.1f}%")
+        
+        print(f"\nОбщее время: {stats['total_time']} минут ({stats['total_time'] // 60} часов {stats['total_time'] % 60} минут)")
+        
+        print("\n📊 По типам:")
+        for task_type, count in stats['by_type'].items():
+            print(f"   {task_type}: {count}")
+        
+        print("\n📊 По сложности:")
+        for difficulty, count in stats['by_difficulty'].items():
+            print(f"   {difficulty}: {count}")
+        
+        print("=" * 70)
     
     @staticmethod
-    def get_string_input(prompt, required=True, max_length=100, allow_empty=False):
+    def display_generated_task(task):
+        """Отображение сгенерированной задачи"""
+        print("\n" + "🎉" * 35)
+        print("СГЕНЕРИРОВАНА НОВАЯ ЗАДАЧА!")
+        print("🎉" * 35)
+        ConsoleView.display_task(task)
+        print("\n💡 Удачи в выполнении!")
+    
+    @staticmethod
+    def get_string_input(prompt, required=True, max_length=200):
         """Получение строкового ввода с валидацией"""
         while True:
             value = input(prompt).strip()
@@ -174,20 +157,43 @@ class ConsoleView:
             return value
     
     @staticmethod
-    def get_password_input(prompt="Пароль: "):
-        """Получение пароля с проверкой"""
+    def get_task_type_choice():
+        """Получение выбора типа задачи"""
+        ConsoleView.display_task_types()
         while True:
-            password = input(prompt).strip()
-            
-            if len(password) < 4:
-                print("❌ Пароль должен содержать минимум 4 символа")
-                continue
-            
-            if len(password) > 128:
-                print("❌ Пароль не должен превышать 128 символов")
-                continue
-            
-            return password
+            try:
+                choice = input("\nВыберите тип задачи (1-6): ").strip()
+                if not choice:
+                    print("❌ Пожалуйста, сделайте выбор")
+                    continue
+                
+                choice_int = int(choice)
+                if 1 <= choice_int <= 6:
+                    return TaskType.get_all()[choice_int - 1]
+                else:
+                    print("❌ Пожалуйста, введите число от 1 до 6")
+            except ValueError:
+                print("❌ Пожалуйста, введите корректное число")
+    
+    @staticmethod
+    def get_difficulty_choice():
+        """Получение выбора сложности"""
+        ConsoleView.display_difficulties()
+        while True:
+            try:
+                choice = input("\nВыберите сложность (1-3): ").strip()
+                if not choice:
+                    print("❌ Пожалуйста, сделайте выбор")
+                    continue
+                
+                choice_int = int(choice)
+                if 1 <= choice_int <= 3:
+                    difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD]
+                    return difficulties[choice_int - 1]
+                else:
+                    print("❌ Пожалуйста, введите число от 1 до 3")
+            except ValueError:
+                print("❌ Пожалуйста, введите корректное число")
     
     @staticmethod
     def get_choice(prompt, min_choice, max_choice):
@@ -222,23 +228,6 @@ class ConsoleView:
             print(f"\n✅ {message}")
         else:
             print(f"\nℹ️ {message}")
-    
-    @staticmethod
-    def display_generated_password(password, strength_score, strength_label):
-        """Отображение сгенерированного пароля"""
-        print("\n" + "=" * 60)
-        print("СГЕНЕРИРОВАН ПАРОЛЬ")
-        print("=" * 60)
-        print(f"Пароль: {password}")
-        print(f"Длина: {len(password)} символов")
-        print(f"Сложность: {strength_label} ({strength_score}/100)")
-        print("=" * 60)
-    
-    @staticmethod
-    def display_update_menu():
-        """Меню обновления записи"""
-        print("\n--- РЕДАКТИРОВАНИЕ ЗАПИСИ ---")
-        print("Оставьте поле пустым, чтобы не менять")
     
     @staticmethod
     def wait_for_enter():
