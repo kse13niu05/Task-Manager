@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Модульное тестирование Password Manager
+Модульное тестирование Random Task Generator
 """
 
 import unittest
@@ -8,324 +8,288 @@ import tempfile
 import os
 import sys
 
-# Добавляем текущую директорию в путь для импорта
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models import PasswordRecord, PasswordCategory
-from controllers import PasswordManager
-from utils import PasswordGenerator, UndoStack, JSONHandler
+from models import TaskType, Difficulty, WorkTask, SportTask, StudyTask
+from factories import TaskFactory, TaskGenerator
+from controllers import TaskManagerController
+from utils import TaskHistoryQueue, JSONHandler
 
 
-class TestPasswordRecord(unittest.TestCase):
-    """Тесты для класса PasswordRecord"""
+class TestTaskTypes(unittest.TestCase):
+    """Тесты для различных типов задач"""
     
-    def setUp(self):
-        self.record = PasswordRecord("Google", "user@example.com", "SecurePass123!", "email")
+    def test_work_task_creation(self):
+        """Позитивный тест: создание рабочей задачи"""
+        task = WorkTask("Сделать отчет", Difficulty.MEDIUM, TaskType.WORK)
+        self.assertEqual(task.get_description(), "Сделать отчет")
+        self.assertEqual(task.get_difficulty(), Difficulty.MEDIUM)
+        self.assertEqual(task.get_estimated_time(), 60)
+        self.assertEqual(task.get_icon(), "💼")
     
-    def test_create_valid_record(self):
-        """Позитивный тест: создание корректной записи"""
-        self.assertEqual(self.record.get_service(), "Google")
-        self.assertEqual(self.record.get_username(), "user@example.com")
-        self.assertEqual(self.record.get_password(), "SecurePass123!")
-        self.assertEqual(self.record.get_category(), "email")
-        self.assertIsNotNone(self.record.get_id())
+    def test_sport_task_creation(self):
+        """Позитивный тест: создание спортивной задачи"""
+        task = SportTask("Пробежка", Difficulty.EASY, TaskType.SPORT)
+        self.assertEqual(task.get_estimated_time(), 20)
+        self.assertEqual(task.get_icon(), "🏃")
     
-    def test_empty_service_negative(self):
-        """Негативный тест: пустое название сервиса"""
+    def test_study_task_creation(self):
+        """Позитивный тест: создание учебной задачи"""
+        task = StudyTask("Изучить Python", Difficulty.HARD, TaskType.STUDY)
+        self.assertEqual(task.get_estimated_time(), 100)
+        self.assertEqual(task.get_icon(), "📚")
+    
+    def test_empty_description_negative(self):
+        """Негативный тест: пустое описание"""
+        task = WorkTask("Описание", Difficulty.MEDIUM, TaskType.WORK)
         with self.assertRaises(ValueError):
-            self.record.set_service("")
+            task.set_description("")
     
-    def test_whitespace_service_edge(self):
-        """Граничный тест: пробелы в названии сервиса"""
+    def test_description_too_long_edge(self):
+        """Граничный тест: слишком длинное описание"""
+        task = WorkTask("Описание", Difficulty.MEDIUM, TaskType.WORK)
         with self.assertRaises(ValueError):
-            self.record.set_service("   ")
+            task.set_description("a" * 300)
     
-    def test_empty_username_negative(self):
-        """Негативный тест: пустое имя пользователя"""
-        with self.assertRaises(ValueError):
-            self.record.set_username("")
-    
-    def test_empty_password_negative(self):
-        """Негативный тест: пустой пароль"""
-        with self.assertRaises(ValueError):
-            self.record.set_password("")
-    
-    def test_short_password_edge(self):
-        """Граничный тест: слишком короткий пароль"""
-        with self.assertRaises(ValueError):
-            self.record.set_password("123")
-    
-    def test_long_password_edge(self):
-        """Граничный тест: слишком длинный пароль"""
-        with self.assertRaises(ValueError):
-            self.record.set_password("a" * 200)
-    
-    def test_long_service_edge(self):
-        """Граничный тест: длинное название сервиса"""
-        with self.assertRaises(ValueError):
-            self.record.set_service("a" * 200)
-    
-    def test_long_username_edge(self):
-        """Граничный тест: длинное имя пользователя"""
-        with self.assertRaises(ValueError):
-            self.record.set_username("a" * 200)
-    
-    def test_invalid_category_negative(self):
-        """Негативный тест: неверная категория"""
-        with self.assertRaises(ValueError):
-            self.record.set_category("invalid_category")
-    
-    def test_valid_category(self):
-        """Позитивный тест: верная категория"""
-        self.record.set_category("social")
-        self.assertEqual(self.record.get_category(), "social")
-    
-    def test_mask_password(self):
-        """Позитивный тест: маскирование пароля"""
-        password = "SecurePass123!"
-        self.record.set_password(password)
-        masked = self.record.get_masked_password()
-        
-        if len(password) <= 8:
-            self.assertEqual(len(masked), len(password))
-            self.assertTrue(all(c == '*' for c in masked))
-        else:
-            self.assertEqual(masked[:4], password[:4])
-            self.assertEqual(masked[-4:], password[-4:])
+    def test_complete_task(self):
+        """Позитивный тест: отметка задачи выполненной"""
+        task = WorkTask("Задача", Difficulty.MEDIUM, TaskType.WORK)
+        self.assertFalse(task.is_completed())
+        task.complete()
+        self.assertTrue(task.is_completed())
     
     def test_to_dict_conversion(self):
         """Позитивный тест: конвертация в словарь"""
-        record_dict = self.record.to_dict()
-        self.assertEqual(record_dict["service"], "Google")
-        self.assertEqual(record_dict["username"], "user@example.com")
-        self.assertEqual(record_dict["password"], "SecurePass123!")
-        self.assertEqual(record_dict["category"], "email")
-        self.assertIn("record_id", record_dict)
-        self.assertIn("created_at", record_dict)
-        self.assertIn("updated_at", record_dict)
+        task = WorkTask("Тест", Difficulty.MEDIUM, TaskType.WORK)
+        task_dict = task.to_dict()
+        
+        self.assertEqual(task_dict["description"], "Тест")
+        self.assertEqual(task_dict["difficulty"], "Средняя")
+        self.assertEqual(task_dict["task_type"], "Работа")
+        self.assertFalse(task_dict["completed"])
+        self.assertIn("task_id", task_dict)
     
     def test_from_dict_conversion(self):
         """Позитивный тест: создание из словаря"""
-        record_dict = {
-            "record_id": "test123",
-            "service": "Test Service",
-            "username": "testuser",
-            "password": "TestPass123!",
-            "category": "work",
-            "notes": "Test notes",
-            "created_at": "01.01.2024 12:00",
-            "updated_at": "01.01.2024 12:00"
+        task_dict = {
+            "task_id": "test123",
+            "description": "Тестовая задача",
+            "difficulty": "Сложная",
+            "task_type": "Спорт",
+            "created_at": "01.01.2024 12:00:00",
+            "completed": True
         }
-        record = PasswordRecord.from_dict(record_dict)
-        self.assertEqual(record.get_id(), "test123")
-        self.assertEqual(record.get_service(), "Test Service")
-        self.assertEqual(record.get_username(), "testuser")
-        self.assertEqual(record.get_password(), "TestPass123!")
-
-
-class TestPasswordGenerator(unittest.TestCase):
-    """Тесты для генератора паролей"""
-    
-    def test_generate_default_length(self):
-        """Позитивный тест: генерация пароля по умолчанию"""
-        password = PasswordGenerator.generate()
-        self.assertEqual(len(password), 12)
-    
-    def test_generate_custom_length(self):
-        """Позитивный тест: генерация с заданной длиной"""
-        lengths = [8, 16, 24, 32]
-        for length in lengths:
-            password = PasswordGenerator.generate(length=length)
-            self.assertEqual(len(password), length)
-    
-    def test_generate_too_short_edge(self):
-        """Граничный тест: слишком короткий пароль"""
-        with self.assertRaises(ValueError):
-            PasswordGenerator.generate(length=3)
-    
-    def test_generate_too_long_edge(self):
-        """Граничный тест: слишком длинный пароль"""
-        with self.assertRaises(ValueError):
-            PasswordGenerator.generate(length=200)
-    
-    def test_generate_only_uppercase(self):
-        """Позитивный тест: только заглавные буквы"""
-        password = PasswordGenerator.generate(length=20, use_lowercase=False, 
-                                              use_digits=False, use_special=False)
-        self.assertTrue(all(c.isupper() for c in password))
-    
-    def test_generate_only_lowercase(self):
-        """Позитивный тест: только строчные буквы"""
-        password = PasswordGenerator.generate(length=20, use_uppercase=False,
-                                              use_digits=False, use_special=False)
-        self.assertTrue(all(c.islower() for c in password))
-    
-    def test_generate_with_digits(self):
-        """Позитивный тест: с цифрами"""
-        password = PasswordGenerator.generate(length=20, use_uppercase=False,
-                                              use_lowercase=False, use_special=False)
-        self.assertTrue(all(c.isdigit() for c in password))
-    
-    def test_calculate_strength(self):
-        """Позитивный тест: оценка сложности пароля"""
-        weak_pass = "123"
-        medium_pass = "Password123"
-        strong_pass = "S#r0ngP@ssw0rd!2024"
+        task = Task.from_dict(task_dict)
         
-        weak_score = PasswordGenerator.calculate_strength(weak_pass)
-        medium_score = PasswordGenerator.calculate_strength(medium_pass)
-        strong_score = PasswordGenerator.calculate_strength(strong_pass)
-        
-        self.assertLess(weak_score, 40)
-        self.assertLess(medium_score, 80)
-        self.assertGreaterEqual(strong_score, 80)
-    
-    def test_empty_password_strength(self):
-        """Граничный тест: пустой пароль"""
-        score = PasswordGenerator.calculate_strength("")
-        self.assertEqual(score, 0)
-    
-    def test_get_strength_label(self):
-        """Позитивный тест: текстовые метки сложности"""
-        self.assertEqual(PasswordGenerator.get_strength_label(90), "Очень надежный")
-        self.assertEqual(PasswordGenerator.get_strength_label(70), "Надежный")
-        self.assertEqual(PasswordGenerator.get_strength_label(50), "Средний")
-        self.assertEqual(PasswordGenerator.get_strength_label(30), "Слабый")
-        self.assertEqual(PasswordGenerator.get_strength_label(10), "Очень слабый")
+        self.assertEqual(task.get_id(), "test123")
+        self.assertEqual(task.get_description(), "Тестовая задача")
+        self.assertEqual(task.get_difficulty(), Difficulty.HARD)
+        self.assertEqual(task.get_task_type(), TaskType.SPORT)
+        self.assertTrue(task.is_completed())
 
 
-class TestUndoStack(unittest.TestCase):
-    """Тесты для стека отмены"""
+class TestTaskFactory(unittest.TestCase):
+    """Тесты для фабрики задач"""
+    
+    def test_create_work_task(self):
+        """Позитивный тест: создание рабочей задачи через фабрику"""
+        task = TaskFactory.create_task("Работа", "Написать код", "Средняя")
+        self.assertIsInstance(task, WorkTask)
+        self.assertEqual(task.get_description(), "Написать код")
+    
+    def test_create_sport_task(self):
+        """Позитивный тест: создание спортивной задачи"""
+        task = TaskFactory.create_task(TaskType.SPORT, "Пробежка", Difficulty.EASY)
+        self.assertIsInstance(task, SportTask)
+    
+    def test_create_study_task(self):
+        """Позитивный тест: создание учебной задачи"""
+        task = TaskFactory.create_task("Учеба", "Повторить материал", "Легкая")
+        self.assertIsInstance(task, StudyTask)
+    
+    def test_invalid_task_type_negative(self):
+        """Негативный тест: неверный тип задачи"""
+        with self.assertRaises(ValueError):
+            TaskFactory.create_task("Несуществующий", "Описание", "Средняя")
+    
+    def test_invalid_difficulty_negative(self):
+        """Негативный тест: неверная сложность"""
+        with self.assertRaises(ValueError):
+            TaskFactory.create_task("Работа", "Описание", "Сверхсложная")
+    
+    def test_get_task_examples(self):
+        """Позитивный тест: получение примеров задач"""
+        examples = TaskFactory.get_task_examples()
+        self.assertIn(TaskType.WORK, examples)
+        self.assertTrue(len(examples[TaskType.WORK]) > 0)
+
+
+class TestTaskGenerator(unittest.TestCase):
+    """Тесты для генератора задач"""
     
     def setUp(self):
-        self.stack = UndoStack(max_size=3)
+        self.generator = TaskGenerator()
     
-    def test_push_pop(self):
-        """Позитивный тест: добавление и извлечение"""
-        self.stack.push("action1")
-        self.stack.push("action2")
-        self.assertEqual(self.stack.pop(), "action2")
-        self.assertEqual(self.stack.pop(), "action1")
+    def test_generate_random_task(self):
+        """Позитивный тест: генерация случайной задачи"""
+        task = self.generator.generate_random_task()
+        self.assertIsNotNone(task)
+        self.assertIsNotNone(task.get_id())
+        self.assertIsNotNone(task.get_description())
     
-    def test_pop_empty_edge(self):
-        """Граничный тест: извлечение из пустого стека"""
-        self.assertIsNone(self.stack.pop())
+    def test_generate_task_by_type(self):
+        """Позитивный тест: генерация задачи указанного типа"""
+        task = self.generator.generate_random_task(task_type=TaskType.WORK)
+        self.assertEqual(task.get_task_type(), TaskType.WORK)
+    
+    def test_generate_task_by_difficulty(self):
+        """Позитивный тест: генерация задачи указанной сложности"""
+        task = self.generator.generate_random_task(difficulty=Difficulty.HARD)
+        self.assertEqual(task.get_difficulty(), Difficulty.HARD)
+    
+    def test_generate_task_by_template(self):
+        """Позитивный тест: создание задачи по шаблону"""
+        task = self.generator.generate_task_by_template(
+            TaskType.WORK, "Особая задача", Difficulty.HARD
+        )
+        self.assertEqual(task.get_description(), "Особая задача")
+        self.assertEqual(task.get_task_type(), TaskType.WORK)
+        self.assertEqual(task.get_difficulty(), Difficulty.HARD)
+
+
+class TestTaskHistoryQueue(unittest.TestCase):
+    """Тесты для очереди истории"""
+    
+    def setUp(self):
+        self.queue = TaskHistoryQueue(max_size=3)
+        self.generator = TaskGenerator()
+    
+    def test_add_task(self):
+        """Позитивный тест: добавление задачи"""
+        task = self.generator.generate_random_task()
+        self.queue.add(task)
+        self.assertEqual(self.queue.size(), 1)
     
     def test_max_size_limit_edge(self):
-        """Граничный тест: ограничение размера"""
-        self.stack.push(1)
-        self.stack.push(2)
-        self.stack.push(3)
-        self.stack.push(4)
+        """Граничный тест: ограничение размера очереди"""
+        for i in range(5):
+            task = self.generator.generate_random_task()
+            self.queue.add(task)
         
-        self.assertEqual(self.stack.size(), 3)
-        self.assertEqual(self.stack.pop(), 4)
-        self.assertEqual(self.stack.pop(), 3)
-        self.assertEqual(self.stack.pop(), 2)
-        self.assertTrue(self.stack.is_empty())
+        self.assertEqual(self.queue.size(), 3)  # Должно сохранить только 3
     
-    def test_peek(self):
-        """Позитивный тест: просмотр последнего действия"""
-        self.stack.push("action1")
-        self.stack.push("action2")
-        self.assertEqual(self.stack.peek(), "action2")
-        self.assertEqual(self.stack.size(), 2)
+    def test_get_all(self):
+        """Позитивный тест: получение всех задач"""
+        tasks = []
+        for i in range(3):
+            task = self.generator.generate_random_task()
+            self.queue.add(task)
+            tasks.append(task)
+        
+        all_tasks = self.queue.get_all()
+        self.assertEqual(len(all_tasks), 3)
     
-    def test_clear(self):
-        """Позитивный тест: очистка стека"""
-        self.stack.push("action1")
-        self.stack.push("action2")
-        self.stack.clear()
-        self.assertTrue(self.stack.is_empty())
+    def test_get_last(self):
+        """Позитивный тест: получение последних задач"""
+        for i in range(5):
+            task = self.generator.generate_random_task()
+            self.queue.add(task)
+        
+        last_tasks = self.queue.get_last(2)
+        self.assertEqual(len(last_tasks), 2)
+    
+    def test_filter_by_type(self):
+        """Позитивный тест: фильтрация по типу"""
+        work_task = self.generator.generate_random_task(task_type=TaskType.WORK)
+        sport_task = self.generator.generate_random_task(task_type=TaskType.SPORT)
+        
+        self.queue.add(work_task)
+        self.queue.add(sport_task)
+        
+        work_tasks = self.queue.get_by_type(TaskType.WORK)
+        self.assertEqual(len(work_tasks), 1)
+        self.assertEqual(work_tasks[0].get_task_type(), TaskType.WORK)
+    
+    def test_filter_by_difficulty(self):
+        """Позитивный тест: фильтрация по сложности"""
+        easy_task = self.generator.generate_random_task(difficulty=Difficulty.EASY)
+        hard_task = self.generator.generate_random_task(difficulty=Difficulty.HARD)
+        
+        self.queue.add(easy_task)
+        self.queue.add(hard_task)
+        
+        easy_tasks = self.queue.get_by_difficulty(Difficulty.EASY)
+        self.assertEqual(len(easy_tasks), 1)
+    
+    def test_clear_queue(self):
+        """Позитивный тест: очистка очереди"""
+        task = self.generator.generate_random_task()
+        self.queue.add(task)
+        self.assertFalse(self.queue.is_empty())
+        
+        self.queue.clear()
+        self.assertTrue(self.queue.is_empty())
 
 
-class TestPasswordManager(unittest.TestCase):
-    """Тесты для менеджера паролей"""
+class TestTaskManagerController(unittest.TestCase):
+    """Тесты для контроллера"""
     
     def setUp(self):
-        self.manager = PasswordManager()
-        self.record = self.manager.add_record("Google", "user@gmail.com", "Pass123!", "email")
+        self.controller = TaskManagerController()
     
-    def test_add_record_positive(self):
-        """Позитивный тест: добавление записи"""
-        count = self.manager.get_count()
-        self.assertEqual(count, 1)
-        self.assertIsNotNone(self.manager.get_record_by_id(self.record.get_id()))
+    def test_generate_random_task(self):
+        """Позитивный тест: генерация случайной задачи через контроллер"""
+        task = self.controller.generate_random_task()
+        self.assertIsNotNone(task)
+        self.assertEqual(len(self.controller.get_all_tasks()), 1)
     
-    def test_add_empty_service_negative(self):
-        """Негативный тест: добавление с пустым сервисом"""
-        with self.assertRaises(ValueError):
-            self.manager.add_record("", "user", "pass", "other")
+    def test_add_custom_task(self):
+        """Позитивный тест: добавление пользовательской задачи"""
+        task = self.controller.add_custom_task(
+            TaskType.WORK, "Моя задача", Difficulty.MEDIUM
+        )
+        self.assertEqual(task.get_description(), "Моя задача")
+        self.assertEqual(len(self.controller.get_all_tasks()), 1)
     
-    def test_delete_record_positive(self):
-        """Позитивный тест: удаление записи"""
-        self.assertTrue(self.manager.delete_record(self.record.get_id()))
-        self.assertEqual(self.manager.get_count(), 0)
-    
-    def test_delete_nonexistent_record(self):
-        """Негативный тест: удаление несуществующей записи"""
-        self.assertFalse(self.manager.delete_record("nonexistent"))
-    
-    def test_update_record(self):
-        """Позитивный тест: обновление записи"""
-        self.manager.update_record(self.record.get_id(), service="YouTube", username="newuser@gmail.com")
-        updated = self.manager.get_record_by_id(self.record.get_id())
-        self.assertEqual(updated.get_service(), "YouTube")
-        self.assertEqual(updated.get_username(), "newuser@gmail.com")
-    
-    def test_search_by_service(self):
-        """Позитивный тест: поиск по сервису"""
-        self.manager.add_record("Facebook", "user@fb.com", "pass1", "social")
-        self.manager.add_record("Twitter", "user@tw.com", "pass2", "social")
+    def test_filter_by_type(self):
+        """Позитивный тест: фильтрация по типу"""
+        self.controller.generate_random_task(task_type=TaskType.WORK)
+        self.controller.generate_random_task(task_type=TaskType.SPORT)
         
-        results = self.manager.search_by_service("face")
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].get_service(), "Facebook")
+        work_tasks = self.controller.filter_by_type(TaskType.WORK)
+        self.assertEqual(len(work_tasks), 1)
     
-    def test_search_by_username(self):
-        """Позитивный тест: поиск по имени пользователя"""
-        self.manager.add_record("Service1", "alice@test.com", "pass1", "email")
-        self.manager.add_record("Service2", "bob@test.com", "pass2", "email")
+    def test_mark_completed(self):
+        """Позитивный тест: отметка выполненной задачи"""
+        task = self.controller.generate_random_task()
+        task_id = task.get_id()
         
-        results = self.manager.search_by_username("alice")
-        self.assertEqual(len(results), 1)
-    
-    def test_filter_by_category(self):
-        """Позитивный тест: фильтрация по категории"""
-        self.manager.add_record("GitHub", "dev@github.com", "pass1", "work")
-        self.manager.add_record("Spotify", "user@spotify.com", "pass2", "entertainment")
+        result = self.controller.mark_task_completed(task_id)
+        self.assertTrue(result)
         
-        work_records = self.manager.filter_by_category("work")
-        self.assertEqual(len(work_records), 1)
-        self.assertEqual(work_records[0].get_service(), "GitHub")
+        # Проверяем, что задача отмечена
+        tasks = self.controller.get_all_tasks()
+        self.assertTrue(tasks[0].is_completed())
     
-    def test_undo_add(self):
-        """Позитивный тест: отмена добавления"""
-        initial_count = self.manager.get_count()
-        self.manager.undo()
-        self.assertEqual(self.manager.get_count(), initial_count - 1)
+    def test_mark_nonexistent_completed(self):
+        """Негативный тест: отметка несуществующей задачи"""
+        result = self.controller.mark_task_completed("nonexistent")
+        self.assertFalse(result)
     
-    def test_undo_delete(self):
-        """Позитивный тест: отмена удаления"""
-        record_id = self.record.get_id()
-        self.manager.delete_record(record_id)
-        self.assertEqual(self.manager.get_count(), 0)
-        self.manager.undo()
-        self.assertEqual(self.manager.get_count(), 1)
-    
-    def test_undo_update(self):
-        """Позитивный тест: отмена обновления"""
-        original_service = self.record.get_service()
-        self.manager.update_record(self.record.get_id(), service="NewService")
-        self.assertEqual(self.record.get_service(), "NewService")
-        self.manager.undo()
-        self.assertEqual(self.record.get_service(), original_service)
-    
-    def test_get_statistics(self):
+    def test_statistics(self):
         """Позитивный тест: получение статистики"""
-        stats = self.manager.get_statistics()
+        self.controller.generate_random_task()
+        stats = self.controller.get_statistics()
         self.assertEqual(stats['total'], 1)
-        self.assertIn('email', stats['by_category'])
+        self.assertIn('by_type', stats)
+    
+    def test_clear_history(self):
+        """Позитивный тест: очистка истории"""
+        self.controller.generate_random_task()
+        self.assertEqual(len(self.controller.get_all_tasks()), 1)
+        
+        self.controller.clear_history()
+        self.assertEqual(len(self.controller.get_all_tasks()), 0)
 
 
 class TestJSONHandler(unittest.TestCase):
@@ -335,35 +299,36 @@ class TestJSONHandler(unittest.TestCase):
         self.temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         self.temp_file.close()
         self.handler = JSONHandler(self.temp_file.name)
+        self.generator = TaskGenerator()
     
     def tearDown(self):
         os.unlink(self.temp_file.name)
     
     def test_save_and_load_empty(self):
         """Позитивный тест: сохранение и загрузка пустого списка"""
-        self.handler.save([])
-        loaded = self.handler.load()
+        self.handler.save_history([])
+        loaded = self.handler.load_history()
         self.assertEqual(loaded, [])
     
-    def test_save_and_load_records(self):
-        """Позитивный тест: сохранение и загрузка записей"""
-        records = [
-            PasswordRecord("Google", "user1@test.com", "pass123", "email"),
-            PasswordRecord("GitHub", "user2@github.com", "pass456", "work")
+    def test_save_and_load_tasks(self):
+        """Позитивный тест: сохранение и загрузка задач"""
+        tasks = [
+            self.generator.generate_random_task(),
+            self.generator.generate_random_task()
         ]
         
-        self.handler.save(records)
-        loaded = self.handler.load()
+        self.handler.save_history(tasks)
+        loaded = self.handler.load_history()
         
         self.assertEqual(len(loaded), 2)
-        self.assertEqual(loaded[0].get_service(), "Google")
-        self.assertEqual(loaded[1].get_service(), "GitHub")
+        self.assertEqual(loaded[0].get_description(), tasks[0].get_description())
+        self.assertEqual(loaded[1].get_description(), tasks[1].get_description())
     
     def test_load_nonexistent_file(self):
         """Граничный тест: загрузка из несуществующего файла"""
         handler = JSONHandler("nonexistent.json")
-        records = handler.load()
-        self.assertEqual(records, [])
+        tasks = handler.load_history()
+        self.assertEqual(tasks, [])
 
 
 def run_tests():
@@ -371,18 +336,19 @@ def run_tests():
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     
-    suite.addTests(loader.loadTestsFromTestCase(TestPasswordRecord))
-    suite.addTests(loader.loadTestsFromTestCase(TestPasswordGenerator))
-    suite.addTests(loader.loadTestsFromTestCase(TestUndoStack))
-    suite.addTests(loader.loadTestsFromTestCase(TestPasswordManager))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskTypes))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskFactory))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskGenerator))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskHistoryQueue))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskManagerController))
     suite.addTests(loader.loadTestsFromTestCase(TestJSONHandler))
     
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
     
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ")
-    print("=" * 60)
+    print("=" * 70)
     print(f"Всего тестов: {result.testsRun}")
     print(f"Успешно: {result.testsRun - len(result.failures) - len(result.errors)}")
     print(f"Провалено: {len(result.failures)}")
